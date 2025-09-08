@@ -1,0 +1,26 @@
+============================================================
+🔧 PAROL6 Headless Commander - Linux修补器
+============================================================
+✅ 已创建修补文件: headless_commander_patched.py
+
+🚀 正在运行修补后的程序...
+------------------------------------------------------------
+🔧 Initializing serial port for Linux/Mac...
+✅ Connected to saved port: /dev/ttyACM0
+📡 Using serial port: /dev/ttyACM0
+⚡ Baudrate: 3000000
+🤖 PAROL6 Headless Commander Ready
+
+Start listening to 127.0.0.1:5001
+Initializing Home command...
+  -> Sending home signal (100)... Countdown: 10
+  -> Sending home signal (100)... Countdown: 9
+  -> Sending home signal (100)... Countdown: 8
+  -> Sending home signal (100)... Countdown: 7
+  -> Sending home signal (100)... Countdown: 6
+  -> Sending home signal (100)... Countdown: 5
+  -> Sending home signal (100)... Countdown: 4
+  -> Sending home signal (100)... Countdown: 3
+  -> Sending home signal (100)... Countdown: 2
+  -> Sending home signal (100)... Countdown: 1
+  -> Homing sequence initiated by robot.
