@@ -274,7 +274,7 @@ def solve_ik_with_adaptive_tol_subdivision(
     Uses adaptive tolerance based on proximity to singularities:
     - Near singularities: looser tolerance for easier convergence
     - Away from singularities: stricter tolerance for precise solutions
-    If necessary, recursively subdivide the motion until ikine_LM converges
+    If necessary, recursively subdivide the motion until ikine_LMS converges
     on every segment. Finally check that solution respects joint limits. From experimentation,
     jogging with lower tolerances often produces q_paths that do not differ from current_q,
     essentially freezing the robot.
@@ -332,7 +332,7 @@ def solve_ik_with_adaptive_tol_subdivision(
             else:
                 damping = 0.0000001  # Normal low damping
         
-        res = robot.ikine_LM(Tb, q0=q_seed, ilimit=ilimit, tol=tol, wN=damping)
+        res = robot.ikine_LMS(Tb, q0=q_seed, ilimit=ilimit, tol=tol, wN=damping)
         if res.success:
             q_good = unwrap_angles(res.q, q_seed)      # << unwrap vs *previous*
             return [q_good], True, res.iterations, res.residual

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PAROL6 逆运动学求解器测试程序
-测试 ik_LM 和 ikine_LM 是否可用来替代 ikine_LMS
+PAROL6 修复后API安全测试程序
+专门测试修复后的位姿和平滑运动API
 """
 import sys
 import os
@@ -18,338 +18,489 @@ sys.path.append(parent_dir)
 
 # 现在可以导入父目录中的模块
 from robot_api import *
-import numpy as np
 import time
+import numpy as np
 from robot_api import *
 
-# 尝试导入机器人模型相关模块
-try:
-    import roboticstoolbox as rtb
-    from spatialmath import SE3
-    RTB_AVAILABLE = True
-    print("✅ roboticstoolbox 可用")
-except ImportError as e:
-    RTB_AVAILABLE = False
-    print(f"❌ roboticstoolbox 导入失败: {e}")
-
-try:
-    from PAROL6_ROBOT import PAROL6_ROBOT
-    PAROL_MODEL_AVAILABLE = True
-    print("✅ PAROL6_ROBOT 模型可用")
-except ImportError as e:
-    PAROL_MODEL_AVAILABLE = False
-    print(f"❌ PAROL6_ROBOT 导入失败: {e}")
-
-class IKTester:
+class SafeAPITester:
     def __init__(self):
-        """初始化逆运动学测试器"""
-        self.robot = None
+        """初始化安全测试器"""
         self.current_pose = None
         self.current_joints = None
+        self.safe_workspace_center = None
+        self.test_results = {}
         
-        print("🔬 PAROL6 逆运动学求解器测试")
-        print("目标：验证 ik_LM 和 ikine_LM 可用性")
-        
-    def initialize_robot_model(self):
-        """初始化机器人模型"""
-        if not RTB_AVAILABLE or not PAROL_MODEL_AVAILABLE:
-            print("❌ 缺少必要的库，无法初始化机器人模型")
-            return False
+        print("🛡️ PAROL6 修复后API安全测试器")
+        print("专门测试位姿移动和平滑运动API")
+
+    def initialize_safe_baseline(self):
+        """初始化安全基线"""
+        print("\n📊 初始化安全测试基线")
+        print("-" * 40)
         
         try:
-            self.robot = PAROL6_ROBOT()
-            print("✅ PAROL6 机器人模型初始化成功")
-            print(f"📊 机器人信息: {self.robot.n}轴机器人")
-            return True
-        except Exception as e:
-            print(f"❌ 机器人模型初始化失败: {e}")
-            return False
-    
-    def get_current_robot_state(self):
-        """获取当前机器人状态"""
-        try:
+            # 获取当前状态
             self.current_pose = get_robot_pose()
             self.current_joints = get_robot_joint_angles()
             
-            if self.current_pose and self.current_joints:
-                print(f"📍 当前位姿: {[round(p, 2) for p in self.current_pose]}")
-                print(f"🔧 当前关节: {[round(a, 2) for a in self.current_joints]}")
-                return True
-            else:
+            if not self.current_pose or not self.current_joints:
                 print("❌ 无法获取机器人当前状态")
                 return False
-        except Exception as e:
-            print(f"❌ 获取状态失败: {e}")
-            return False
-    
-    def test_ik_solvers(self):
-        """测试不同的逆运动学求解器"""
-        if not self.robot or not self.current_joints:
-            print("❌ 机器人模型或状态未初始化")
-            return
-        
-        print("\n" + "="*50)
-        print("🧪 测试逆运动学求解器")
-        print("="*50)
-        
-        # 将当前关节角度转换为弧度
-        q_current = np.radians(self.current_joints)
-        
-        # 计算当前位姿的变换矩阵
-        try:
-            T_current = self.robot.fkine(q_current)
-            print(f"✅ 正运动学计算成功")
-        except Exception as e:
-            print(f"❌ 正运动学计算失败: {e}")
-            return
-        
-        # 创建一个稍微偏移的目标位姿
-        T_target = T_current * SE3.Tx(0.01) * SE3.Ty(0.01)  # 偏移10mm
-        print(f"🎯 目标位姿偏移: X+10mm, Y+10mm")
-        
-        # 测试不同的IK求解器
-        solvers_to_test = [
-            ("ik_LM", "C++版本LM求解器"),
-            ("ikine_LM", "Python版本LM求解器"), 
-            ("ikine_NR", "Newton-Raphson求解器"),
-            ("ikine_min", "最小化求解器")
-        ]
-        
-        for solver_name, description in solvers_to_test:
-            print(f"\n🔍 测试 {solver_name} ({description})")
-            self.test_single_solver(solver_name, T_target, q_current)
-    
-    def test_single_solver(self, solver_name, T_target, q_initial):
-        """测试单个求解器"""
-        try:
-            # 检查求解器是否存在
-            if not hasattr(self.robot, solver_name):
-                print(f"   ❌ {solver_name} 方法不存在")
-                return
             
-            start_time = time.time()
+            print(f"📍 当前位姿: {[round(p, 2) for p in self.current_pose]}")
+            print(f"🔧 当前关节: {[round(a, 2) for a in self.current_joints]}")
             
-            # 调用求解器
-            solver_func = getattr(self.robot, solver_name)
+            # 设置安全工作空间中心（使用当前位置）
+            self.safe_workspace_center = self.current_pose[:3].copy()  # 只取XYZ
+            print(f"🎯 安全工作空间中心: {[round(p, 2) for p in self.safe_workspace_center]}")
             
-            if solver_name in ['ik_LM', 'ikine_LM']:
-                # LM求解器使用 q0 参数
-                result = solver_func(T_target, q0=q_initial)
-            else:
-                # 其他求解器
-                result = solver_func(T_target, q0=q_initial)
-            
-            solve_time = time.time() - start_time
-            
-            # 分析结果
-            if result is not None:
-                if hasattr(result, 'success'):
-                    # 新版本RTB返回结果对象
-                    success = result.success
-                    if success:
-                        q_solution = result.q
-                        print(f"   ✅ 求解成功 (耗时: {solve_time:.3f}s)")
-                        print(f"   🔧 解: {np.degrees(q_solution).round(2)}")
-                        
-                        # 验证解的准确性
-                        self.verify_solution(q_solution, T_target)
-                    else:
-                        print(f"   ❌ 求解失败: {getattr(result, 'reason', '未知原因')}")
-                else:
-                    # 旧版本RTB直接返回关节角度
-                    if len(result) == self.robot.n:
-                        print(f"   ✅ 求解成功 (耗时: {solve_time:.3f}s)")
-                        print(f"   🔧 解: {np.degrees(result).round(2)}")
-                        self.verify_solution(result, T_target)
-                    else:
-                        print(f"   ❌ 返回结果异常: {result}")
-            else:
-                print(f"   ❌ 求解失败，返回None")
-                
-        except Exception as e:
-            print(f"   ❌ {solver_name} 测试异常: {e}")
-    
-    def verify_solution(self, q_solution, T_target):
-        """验证求解结果的准确性"""
-        try:
-            # 使用解算出的关节角度计算正运动学
-            T_result = self.robot.fkine(q_solution)
-            
-            # 计算位置误差
-            pos_target = T_target.t
-            pos_result = T_result.t
-            pos_error = np.linalg.norm(pos_target - pos_result)
-            
-            # 计算姿态误差
-            R_error = T_target.R @ T_result.R.T
-            angle_error = np.arccos(np.clip((np.trace(R_error) - 1) / 2, -1, 1))
-            
-            print(f"   📏 位置误差: {pos_error*1000:.3f}mm")
-            print(f"   📐 姿态误差: {np.degrees(angle_error):.3f}°")
-            
-            if pos_error < 0.001 and angle_error < np.radians(1):  # 1mm, 1度
-                print(f"   ✅ 解验证通过")
+            # 检查当前位置是否安全
+            if self.is_pose_safe(self.current_pose):
+                print("✅ 当前位置安全，可以开始测试")
                 return True
             else:
-                print(f"   ⚠️ 解精度较低")
+                print("⚠️ 当前位置可能不安全，请手动移动到安全位置")
                 return False
                 
         except Exception as e:
-            print(f"   ❌ 解验证失败: {e}")
+            print(f"❌ 初始化失败: {e}")
             return False
-    
-    def test_file_replacement_needed(self):
-        """检查需要替换的文件"""
-        print("\n" + "="*50)
-        print("📁 检查需要修改的文件")
-        print("="*50)
-        
-        files_to_check = [
-            "headless_commander.py",
-            "PAROL6_ROBOT.py", 
-            "smooth_motion.py"
-        ]
-        
-        for filename in files_to_check:
-            self.check_file_for_ikine_LMS(filename)
-    
-    def check_file_for_ikine_LMS(self, filename):
-        """检查文件中是否包含 ikine_LMS"""
-        try:
-            with open(filename, 'r', encoding='utf-8') as f:
-                content = f.read()
-                
-            count = content.count('ikine_LMS')
-            if count > 0:
-                print(f"📄 {filename}: 发现 {count} 个 'ikine_LMS' 需要替换")
-                
-                # 显示包含 ikine_LMS 的行
-                lines = content.split('\n')
-                for i, line in enumerate(lines):
-                    if 'ikine_LMS' in line:
-                        print(f"   行 {i+1}: {line.strip()}")
-            else:
-                print(f"📄 {filename}: 未发现 'ikine_LMS'")
-                
-        except FileNotFoundError:
-            print(f"📄 {filename}: 文件不存在")
-        except Exception as e:
-            print(f"📄 {filename}: 检查失败 - {e}")
-    
-    def generate_replacement_script(self):
-        """生成替换脚本"""
-        print("\n" + "="*50)
-        print("🔧 生成文件替换脚本")
-        print("="*50)
-        
-        script_content = """#!/usr/bin/env python3
-# PAROL6 ikine_LMS 替换脚本
 
-import os
-import re
+    def is_pose_safe(self, pose):
+        """检查位姿是否安全"""
+        if not pose or len(pose) < 3:
+            return False
+        
+        x, y, z = pose[:3]
+        
+        # 基本安全检查（根据PAROL6工作空间调整）
+        if (50 <= x <= 400 and 
+            -300 <= y <= 300 and 
+            50 <= z <= 400):
+            return True
+        
+        return False
 
-def replace_in_file(filename, old_pattern, new_pattern):
-    \"\"\"在文件中替换内容\"\"\"
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            content = f.read()
+    def create_safe_target_pose(self, offset_x=0, offset_y=0, offset_z=0):
+        """创建安全的目标位姿"""
+        if not self.current_pose:
+            return None
         
-        # 备份原文件
-        backup_filename = filename + '.backup'
-        with open(backup_filename, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print(f"✅ 已备份: {backup_filename}")
+        target_pose = self.current_pose.copy()
+        target_pose[0] += offset_x
+        target_pose[1] += offset_y
+        target_pose[2] += offset_z
         
-        # 执行替换
-        new_content = re.sub(old_pattern, new_pattern, content)
-        changes = content.count(old_pattern.replace(r'\\b', ''))
-        
-        if changes > 0:
-            with open(filename, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-            print(f"✅ {filename}: 替换了 {changes} 处")
+        # 检查目标是否安全
+        if self.is_pose_safe(target_pose):
+            return target_pose
         else:
-            print(f"📄 {filename}: 无需替换")
-            
-    except Exception as e:
-        print(f"❌ {filename}: 替换失败 - {e}")
+            print(f"⚠️ 目标位姿不安全: {[round(p, 2) for p in target_pose]}")
+            return None
 
-# 要修改的文件列表
-files_to_modify = [
-    "headless_commander.py",
-    "PAROL6_ROBOT.py", 
-    "smooth_motion.py"
-]
+    def wait_for_completion(self, result, timeout=15):
+        """等待命令完成"""
+        if not result or not isinstance(result, dict):
+            return False, "无效结果"
+        
+        command_id = result.get('command_id')
+        if not command_id:
+            status = result.get('status')
+            return status == 'COMPLETED', f"状态: {status}"
+        
+        start_time = time.time()
+        last_status = None
+        
+        while time.time() - start_time < timeout:
+            try:
+                status_info = check_command_status(command_id)
+                if status_info:
+                    current_status = status_info.get('status')
+                    if current_status != last_status:
+                        print(f"   状态更新: {current_status}")
+                        last_status = current_status
+                    
+                    if status_info.get('completed'):
+                        final_status = status_info.get('status')
+                        return final_status == 'COMPLETED', f"最终状态: {final_status}"
+                
+                time.sleep(0.3)
+            except Exception as e:
+                print(f"   状态检查异常: {e}")
+                
+        return False, "超时"
 
-print("🔧 开始替换 ikine_LMS -> ikine_LM")
-for filename in files_to_modify:
-    if os.path.exists(filename):
-        replace_in_file(filename, r'\\bikine_LMS\\b', 'ikine_LM')
-    else:
-        print(f"⚠️ 文件不存在: {filename}")
+    def log_test_result(self, api_name, success, details=""):
+        """记录测试结果"""
+        self.test_results[api_name] = {
+            'success': success,
+            'details': details,
+            'timestamp': time.time()
+        }
+        
+        status = "✅ 成功" if success else "❌ 失败"
+        print(f"{status} {api_name}: {details}")
 
-print("\\n🎉 替换完成！")
-print("💡 如果 ikine_LM 不工作，请尝试替换为 ik_LM")
-"""
+    def test_move_robot_pose(self):
+        """测试 move_robot_pose"""
+        print("\n🤖 测试 move_robot_pose")
+        print("-" * 30)
         
-        with open("replace_ikine_LMS.py", "w", encoding='utf-8') as f:
-            f.write(script_content)
+        # 创建安全的小幅移动目标
+        target_pose = self.create_safe_target_pose(offset_x=10, offset_z=5)
         
-        print("📝 已生成替换脚本: replace_ikine_LMS.py")
-        print("🚀 使用方法: python replace_ikine_LMS.py")
-    
-    def run_comprehensive_test(self):
-        """运行综合测试"""
-        print("🚀 开始逆运动学求解器综合测试")
-        
-        # 1. 检查库可用性
-        if not RTB_AVAILABLE:
-            print("❌ 需要安装 roboticstoolbox-python")
+        if not target_pose:
+            self.log_test_result("move_robot_pose", False, "无法创建安全目标位姿")
             return
         
-        # 2. 初始化机器人模型
-        if not self.initialize_robot_model():
-            print("❌ 无法初始化机器人模型，跳过IK测试")
+        print(f"🎯 目标位姿: {[round(p, 2) for p in target_pose]}")
+        
+        try:
+            result = move_robot_pose(
+                target_pose,
+                speed_percentage=5,  # 非常慢的速度
+                wait_for_ack=True,
+                timeout=20
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=20)
+            self.log_test_result("move_robot_pose", success, details)
+            
+            if success:
+                time.sleep(1)  # 等待稳定
+                
+        except Exception as e:
+            self.log_test_result("move_robot_pose", False, f"异常: {e}")
+
+    def test_move_robot_cartesian(self):
+        """测试 move_robot_cartesian"""
+        print("\n📏 测试 move_robot_cartesian")
+        print("-" * 30)
+        
+        target_pose = self.create_safe_target_pose(offset_y=8, offset_z=-3)
+        
+        if not target_pose:
+            self.log_test_result("move_robot_cartesian", False, "无法创建安全目标位姿")
+            return
+        
+        print(f"🎯 直线移动目标: {[round(p, 2) for p in target_pose]}")
+        
+        try:
+            result = move_robot_cartesian(
+                target_pose,
+                speed_percentage=5,  # 非常慢的速度
+                wait_for_ack=True,
+                timeout=20
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=20)
+            self.log_test_result("move_robot_cartesian", success, details)
+            
+            if success:
+                time.sleep(1)
+                
+        except Exception as e:
+            self.log_test_result("move_robot_cartesian", False, f"异常: {e}")
+
+    def test_jog_cartesian(self):
+        """测试 jog_cartesian"""
+        print("\n🕹️ 测试 jog_cartesian")
+        print("-" * 30)
+        
+        # 测试多个轴向的小幅点动
+        test_axes = [
+            ('X+', 'X轴正向'),
+            ('Y+', 'Y轴正向'), 
+            ('Z+', 'Z轴正向'),
+            ('Z-', 'Z轴负向')
+        ]
+        
+        for axis, desc in test_axes:
+            print(f"🎮 测试 {desc} 点动...")
+            
+            try:
+                result = jog_cartesian(
+                    frame='WRF',  # 世界坐标系
+                    axis=axis,
+                    speed_percentage=8,  # 很慢的速度
+                    duration=1.0,  # 短时间
+                    wait_for_ack=True,
+                    timeout=10
+                )
+                
+                success, details = self.wait_for_completion(result, timeout=10)
+                self.log_test_result(f"jog_cartesian_{axis}", success, details)
+                
+                if success:
+                    time.sleep(0.5)  # 短暂停顿
+                else:
+                    break  # 如果失败，停止后续测试
+                    
+            except Exception as e:
+                self.log_test_result(f"jog_cartesian_{axis}", False, f"异常: {e}")
+                break
+
+    def test_smooth_circle(self):
+        """测试 smooth_circle"""
+        print("\n⭕ 测试 smooth_circle")
+        print("-" * 30)
+        
+        if not self.safe_workspace_center:
+            self.log_test_result("smooth_circle", False, "无安全工作空间中心")
+            return
+        
+        # 在当前位置附近画小圆
+        center = self.safe_workspace_center.copy()
+        radius = 8  # 很小的半径
+        
+        print(f"🎯 圆心: {[round(c, 2) for c in center]}, 半径: {radius}mm")
+        
+        try:
+            result = smooth_circle(
+                center=center,
+                radius=radius,
+                plane='XY',
+                frame='WRF',
+                duration=8.0,  # 较长时间，慢速执行
+                wait_for_ack=True,
+                timeout=15
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=15)
+            self.log_test_result("smooth_circle", success, details)
+            
+            if success:
+                time.sleep(1)
+                
+        except Exception as e:
+            self.log_test_result("smooth_circle", False, f"异常: {e}")
+
+    def test_smooth_arc_center(self):
+        """测试 smooth_arc_center"""
+        print("\n🌙 测试 smooth_arc_center")
+        print("-" * 30)
+        
+        if not self.current_pose or not self.safe_workspace_center:
+            self.log_test_result("smooth_arc_center", False, "缺少基准位置")
+            return
+        
+        # 创建弧形路径
+        center = self.safe_workspace_center.copy()
+        end_pose = self.current_pose.copy()
+        end_pose[0] += 15  # X方向偏移
+        end_pose[1] += 10  # Y方向偏移
+        
+        if not self.is_pose_safe(end_pose):
+            self.log_test_result("smooth_arc_center", False, "弧形终点不安全")
+            return
+        
+        print(f"🎯 弧形: 中心{[round(c, 2) for c in center]} -> 终点{[round(p, 2) for p in end_pose[:3]]}")
+        
+        try:
+            result = smooth_arc_center(
+                end_pose=end_pose,
+                center=center,
+                frame='WRF',
+                duration=6.0,
+                wait_for_ack=True,
+                timeout=12
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=12)
+            self.log_test_result("smooth_arc_center", success, details)
+            
+            if success:
+                time.sleep(1)
+                
+        except Exception as e:
+            self.log_test_result("smooth_arc_center", False, f"异常: {e}")
+
+    def test_smooth_spline(self):
+        """测试 smooth_spline"""
+        print("\n🌊 测试 smooth_spline")
+        print("-" * 30)
+        
+        if not self.current_pose:
+            self.log_test_result("smooth_spline", False, "无当前位姿")
+            return
+        
+        # 创建样条路径的路径点
+        waypoints = []
+        
+        # 起始点（当前位置小幅偏移）
+        wp1 = self.create_safe_target_pose(offset_x=5, offset_y=5)
+        wp2 = self.create_safe_target_pose(offset_x=10, offset_y=-5)  
+        wp3 = self.create_safe_target_pose(offset_x=15, offset_y=0)
+        
+        if not all([wp1, wp2, wp3]):
+            self.log_test_result("smooth_spline", False, "无法创建安全路径点")
+            return
+        
+        waypoints = [wp1, wp2, wp3]
+        print(f"🎯 样条路径: {len(waypoints)} 个路径点")
+        
+        try:
+            result = smooth_spline(
+                waypoints=waypoints,
+                frame='WRF',
+                duration=8.0,  # 较长时间
+                wait_for_ack=True,
+                timeout=15
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=15)
+            self.log_test_result("smooth_spline", success, details)
+            
+            if success:
+                time.sleep(1)
+                
+        except Exception as e:
+            self.log_test_result("smooth_spline", False, f"异常: {e}")
+
+    def test_smooth_helix(self):
+        """测试 smooth_helix"""
+        print("\n🌀 测试 smooth_helix")
+        print("-" * 30)
+        
+        if not self.safe_workspace_center:
+            self.log_test_result("smooth_helix", False, "无安全工作空间中心")
+            return
+        
+        # 小螺旋参数
+        center = self.safe_workspace_center.copy()
+        center[2] -= 10  # 稍微降低中心高度
+        radius = 6
+        pitch = 5  # 螺距
+        height = 15  # 总高度
+        
+        print(f"🎯 螺旋: 中心{[round(c, 2) for c in center]}, r={radius}mm, h={height}mm")
+        
+        try:
+            result = smooth_helix(
+                center=center,
+                radius=radius,
+                pitch=pitch,
+                height=height,
+                frame='WRF',
+                duration=10.0,  # 更长时间
+                wait_for_ack=True,
+                timeout=18
+            )
+            
+            success, details = self.wait_for_completion(result, timeout=18)
+            self.log_test_result("smooth_helix", success, details)
+            
+            if success:
+                time.sleep(1)
+                
+        except Exception as e:
+            self.log_test_result("smooth_helix", False, f"异常: {e}")
+
+    def run_all_tests(self):
+        """运行所有测试"""
+        print("🚀 开始修复后API完整测试")
+        print("=" * 50)
+        
+        # 初始化
+        if not self.initialize_safe_baseline():
+            print("❌ 初始化失败，无法继续测试")
+            return
+        
+        print("\n⚠️ 安全提醒:")
+        print("• 测试将使用很小的移动距离和很慢的速度")
+        print("• 确保机器人周围安全无障碍")
+        print("• 急停按钮随时可用")
+        
+        if input("\n确认开始测试? (y/N): ").lower() != 'y':
+            print("❌ 用户取消测试")
+            return
+        
+        start_time = time.time()
+        
+        try:
+            # 依次测试每个API
+            test_functions = [
+                ("move_robot_pose", self.test_move_robot_pose),
+                ("move_robot_cartesian", self.test_move_robot_cartesian), 
+                ("jog_cartesian", self.test_jog_cartesian),
+                ("smooth_circle", self.test_smooth_circle),
+                ("smooth_arc_center", self.test_smooth_arc_center),
+                ("smooth_spline", self.test_smooth_spline),
+                ("smooth_helix", self.test_smooth_helix),
+            ]
+            
+            for api_name, test_func in test_functions:
+                print(f"\n{'='*20} {api_name.upper()} {'='*20}")
+                
+                if input(f"测试 {api_name}? (Y/n/s=跳过全部): ").lower() in ['n', 's']:
+                    if input("跳过全部剩余测试? (y/N): ").lower() == 'y':
+                        break
+                    continue
+                
+                test_func()
+                
+                # 测试间短暂休息
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\n🛑 测试被用户中断")
+        except Exception as e:
+            print(f"\n❌ 测试异常: {e}")
+        finally:
+            self.generate_test_report(time.time() - start_time)
+
+    def generate_test_report(self, total_time):
+        """生成测试报告"""
+        print("\n" + "=" * 60)
+        print("📊 修复后API测试报告")
+        print("=" * 60)
+        
+        successful_apis = []
+        failed_apis = []
+        
+        for api_name, result in self.test_results.items():
+            if result['success']:
+                successful_apis.append(api_name)
+            else:
+                failed_apis.append((api_name, result['details']))
+        
+        print(f"🕐 总测试时间: {total_time:.1f}秒")
+        print(f"📈 测试统计:")
+        print(f"   总测试API: {len(self.test_results)}")
+        print(f"   ✅ 成功: {len(successful_apis)}")
+        print(f"   ❌ 失败: {len(failed_apis)}")
+        
+        if self.test_results:
+            success_rate = len(successful_apis) / len(self.test_results) * 100
+            print(f"   📊 成功率: {success_rate:.1f}%")
+        
+        if successful_apis:
+            print(f"\n✅ 成功的API:")
+            for api in successful_apis:
+                print(f"   • {api}")
+        
+        if failed_apis:
+            print(f"\n❌ 失败的API:")
+            for api, details in failed_apis:
+                print(f"   • {api}: {details}")
+        
+        print(f"\n💡 总结:")
+        if len(successful_apis) >= 5:
+            print("   🎉 大部分API修复成功！")
+        elif len(successful_apis) >= 2:
+            print("   👍 部分API修复成功，还需进一步调整")
         else:
-            # 3. 获取当前状态
-            if self.get_current_robot_state():
-                # 4. 测试IK求解器
-                self.test_ik_solvers()
+            print("   🔧 仍需要更多修复工作")
         
-        # 5. 检查文件
-        self.test_file_replacement_needed()
-        
-        # 6. 生成替换脚本
-        self.generate_replacement_script()
-        
-        print("\n" + "="*60)
-        print("📋 测试总结与建议")
-        print("="*60)
-        print("1. 如果 ikine_LM 测试成功：")
-        print("   → 运行 python replace_ikine_LMS.py 替换文件")
-        print("   → 重启 headless_commander.py")
-        print("   → 重新测试API")
-        
-        print("\n2. 如果 ikine_LM 失败但 ik_LM 成功：")
-        print("   → 手动将文件中的 ikine_LMS 改为 ik_LM")
-        
-        print("\n3. 如果都失败：")
-        print("   → 检查 roboticstoolbox 版本")
-        print("   → pip install roboticstoolbox-python --upgrade")
-        print("   → 检查 PAROL6 机器人配置")
-        
-        print("="*60)
+        print("=" * 60)
 
 def main():
     """主程序"""
-    print("🔬 PAROL6 逆运动学求解器测试程序")
+    print("🛡️ PAROL6 修复后API安全测试程序")
+    print("专门测试ikine_LM修复后的API功能")
     
-    tester = IKTester()
-    
-    if input("开始测试? (y/N): ").lower() == 'y':
-        tester.run_comprehensive_test()
-    else:
-        print("❌ 用户取消测试")
+    tester = SafeAPITester()
+    tester.run_all_tests()
 
 if __name__ == "__main__":
     main()
