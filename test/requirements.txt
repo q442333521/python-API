@@ -1,0 +1,19 @@
+# requirements.txt  —— PAROL6-python-API 环境
+numpy==1.23.4
+scipy==1.11.4
+
+# 机器人相关
+roboticstoolbox-python==1.0.3
+spatialmath-python==1.0.5
+
+# 串口通信
+pyserial>=3.5
+
+# 键盘事件监听（headless_commander.py 用到）
+keyboard>=0.13.5
+
+# Windows 下用于计时的包（如果代码里真的 import oclock 才需要）
+# oclock
+
+# 其他工具库（根据 PAROL6 README，若用 get_robot_pose）
+# 如果要使用 get_robot_pose() 还需安装 numpy, spatialmath 已包含

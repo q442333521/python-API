@@ -4,6 +4,21 @@
 PAROL6 API 修复版测试程序
 根据实际错误分析修复的版本
 """
+import sys
+import os
+
+# 获取当前文件的绝对路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 获取父目录路径
+parent_dir = os.path.dirname(current_dir)
+
+# 将父目录添加到模块搜索路径中
+sys.path.append(parent_dir)
+
+# 现在可以导入父目录中的模块
+from robot_api import *
+import time
 
 import time
 import traceback
