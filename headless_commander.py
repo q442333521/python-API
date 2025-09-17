@@ -371,7 +371,7 @@ def solve_ik_with_adaptive_tol_subdivision(
         return IKResult(False, None, its, resid, adaptive_tol, violations)
 
 #Setup IP address and Simulator port
-ip = "127.0.0.1" #Loopback address
+ip = "0.0.0.0" #Loopback address
 port = 5001
 # Create a UDP socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

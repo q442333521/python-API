@@ -15,7 +15,7 @@ from collections import deque
 from datetime import datetime, timedelta
 
 # Global configuration
-SERVER_IP = "127.0.0.1"
+SERVER_IP = "192.168.1.2"
 SERVER_PORT = 5001
 
 # Global tracker - starts as None (no resources)
